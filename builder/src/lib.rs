@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
-use quote::{quote, ToTokens};
+use quote::quote;
 use syn::{parse_macro_input, spanned::Spanned, Data, DeriveInput};
 
 #[proc_macro_derive(Builder)]
@@ -9,10 +9,11 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let ident = st.ident.to_string();
     let build_ident = Ident::new(&format!("{}Builder", ident), st.span());
     let (idents, types) = get_named_struct_fields(&st).expect("get named fields failed");
-    let build_struct = generate_build_struct(&st, &idents, &types).expect("failed");
-    let setters = generate_setters(&st).expect("setter failed");
-    let build = generate_build(&st, &idents, &types).expect("build generate failed");
-    let builder = generate_builder(&st).expect("builder generate failed");
+    let build_struct = generate_build_struct(&st, &idents, &types).expect("generate build struct failed");
+    let setters = generate_setters(&idents, &types).expect("generate setter failed");
+    let build = generate_build(&st, &idents, &types).expect("generate build function failed");
+    let builder = generate_builder(&st, &idents).expect("generate builder function failed");
+
     let expand = quote! {
 
         #build_struct
@@ -21,7 +22,6 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
         impl #build_ident {
             #setters
-
             #build
         }
     };
@@ -32,7 +32,6 @@ pub fn derive(input: TokenStream) -> TokenStream {
 type Result<T> = syn::Result<T>;
 
 /// what if the field is Option
-#[inline]
 fn get_named_struct_fields(
     st: &DeriveInput,
 ) -> syn::Result<(Vec<&std::option::Option<syn::Ident>>, Vec<WrapType>)> {
@@ -70,8 +69,10 @@ fn get_named_struct_fields(
     Err(syn::Error::new_spanned(st, "Must define on a named Struct, not Enum").into())
 }
 
-fn generate_setters(input: &DeriveInput) -> Result<proc_macro2::TokenStream> {
-    let (idents, types) = get_named_struct_fields(input)?;
+fn generate_setters(
+    idents: &Vec<&std::option::Option<Ident>>,
+    types: &Vec<WrapType>,
+) -> Result<proc_macro2::TokenStream> {
     let mut expand: Vec<proc_macro2::TokenStream> = vec![];
     for (ident, WrapType(ty, _is_option)) in idents.iter().zip(types) {
         let tmp = quote! {
@@ -88,23 +89,6 @@ fn generate_setters(input: &DeriveInput) -> Result<proc_macro2::TokenStream> {
 }
 
 struct WrapType<'a>(&'a syn::Type, bool);
-
-impl<'a> ToTokens for WrapType<'a> {
-    fn into_token_stream(self) -> proc_macro2::TokenStream
-    where
-        Self: Sized,
-    {
-        self.0.to_token_stream()
-    }
-
-    fn to_token_stream(&self) -> proc_macro2::TokenStream {
-        self.0.to_token_stream()
-    }
-
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        tokens.extend(self.0.to_token_stream())
-    }
-}
 
 /// if the field itself is a Option<T> type,
 /// we don't need wrap Option again.
@@ -128,8 +112,10 @@ fn generate_build_struct(
     });
 }
 
-fn generate_builder(st: &DeriveInput) -> Result<proc_macro2::TokenStream> {
-    let (idents, _types) = get_named_struct_fields(st)?;
+fn generate_builder(
+    st: &DeriveInput,
+    idents: &Vec<&std::option::Option<Ident>>,
+) -> Result<proc_macro2::TokenStream> {
     let ident = st.ident.to_string();
     let ident = Ident::new(&ident, st.span());
     let build_ident = Ident::new(&format!("{}Builder", st.ident.to_string()), st.span());
@@ -156,7 +142,7 @@ fn generate_build(
         let tmp = if *is_option {
             quote!(#ident: self.#ident.take())
         } else {
-            quote!{
+            quote! {
                 #ident: self.#ident.take().expect(&format!("field[{}] not be initialized", stringify!(#ident)))
             }
         };
