@@ -9,7 +9,8 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let ident = st.ident.to_string();
     let build_ident = Ident::new(&format!("{}Builder", ident), st.span());
     let (idents, types) = get_named_struct_fields(&st).expect("get named fields failed");
-    let build_struct = generate_build_struct(&st, &idents, &types).expect("generate build struct failed");
+    let build_struct =
+        generate_build_struct(&st, &idents, &types).expect("generate build struct failed");
     let setters = generate_setters(&idents, &types).expect("generate setter failed");
     let build = generate_build(&st, &idents, &types).expect("generate build function failed");
     let builder = generate_builder(&st, &idents).expect("generate builder function failed");
@@ -138,18 +139,26 @@ fn generate_build(
 ) -> Result<proc_macro2::TokenStream> {
     let struct_ident = &st.ident;
     let mut expand = vec![];
+    let mut checks = vec![];
     for (ident, WrapType(_ty, is_option)) in idents.iter().zip(types) {
         let tmp = if *is_option {
             quote!(#ident: self.#ident.take())
         } else {
+            checks.push(quote!{
+                if self.#ident.is_none() {
+                    return std::result::Result::Err(format!("field[{}] not be initialized", stringify!(#ident)).into())
+                }
+            });
             quote! {
-                #ident: self.#ident.take().expect(&format!("field[{}] not be initialized", stringify!(#ident)))
+                #ident: self.#ident.take().unwrap()
             }
         };
         expand.push(tmp);
     }
     let res = quote! {
         fn build(&mut self) -> std::result::Result<#struct_ident, std::boxed::Box<dyn std::error::Error>> {
+            #(#checks)*
+
             std::result::Result::Ok(
                 #struct_ident {
                     #(#expand),*
