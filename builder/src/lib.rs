@@ -3,18 +3,38 @@ use proc_macro2::Ident;
 use quote::quote;
 use syn::{parse_macro_input, spanned::Spanned, Data, DeriveInput};
 
-#[proc_macro_derive(Builder)]
+
+struct FieldInfo<'a> {
+    idents: Vec<&'a Option<syn::Ident>>,
+    types: Vec<WrapType<'a>>,
+    attrs: Vec<&'a Vec<syn::Attribute>>,
+}
+struct WrapType<'a>(&'a syn::Type, InnerType);
+
+#[derive(PartialEq, Eq)]
+enum InnerType {
+    Option,
+    Vec,
+    Whocares,
+}
+
+#[proc_macro_derive(Builder, attributes(builder))]
 pub fn derive(input: TokenStream) -> TokenStream {
     let st = parse_macro_input!(input as DeriveInput);
+    eprintln!("{:?}", st.attrs);
+
     let ident = st.ident.to_string();
     let build_ident = Ident::new(&format!("{}Builder", ident), st.span());
-    let (idents, types) = get_named_struct_fields(&st).expect("get named fields failed");
+    let FieldInfo {
+        idents,
+        types,
+        ..
+    } = get_named_struct_fields(&st).expect("get named fields failed");
     let build_struct =
         generate_build_struct(&st, &idents, &types).expect("generate build struct failed");
     let setters = generate_setters(&idents, &types).expect("generate setter failed");
     let build = generate_build(&st, &idents, &types).expect("generate build function failed");
     let builder = generate_builder(&st, &idents).expect("generate builder function failed");
-
     let expand = quote! {
 
         #build_struct
@@ -35,7 +55,7 @@ type Result<T> = syn::Result<T>;
 /// what if the field is Option
 fn get_named_struct_fields(
     st: &DeriveInput,
-) -> syn::Result<(Vec<&std::option::Option<syn::Ident>>, Vec<WrapType>)> {
+) -> syn::Result<FieldInfo> {
     if let Data::Struct(syn::DataStruct {
         fields: syn::Fields::Named(syn::FieldsNamed { ref named, .. }),
         ..
@@ -56,16 +76,21 @@ fn get_named_struct_fields(
                             ) = seg.arguments
                             {
                                 if let Some(syn::GenericArgument::Type(inner)) = args.first() {
-                                    return WrapType(&inner, true);
+                                    return WrapType(&inner, InnerType::Option);
                                 }
                             }
                         }
                     }
                 }
-                return WrapType(&f.ty, false);
+                return WrapType(&f.ty, InnerType::Whocares);
             })
             .collect();
-        return Ok((idents, types));
+        let attrs: Vec<_> = named.iter().map(|f| &f.attrs).collect();
+        return Ok(FieldInfo {
+            idents,
+            types,
+            attrs
+        });
     }
     Err(syn::Error::new_spanned(st, "Must define on a named Struct, not Enum").into())
 }
@@ -89,7 +114,6 @@ fn generate_setters(
     })
 }
 
-struct WrapType<'a>(&'a syn::Type, bool);
 
 /// if the field itself is a Option<T> type,
 /// we don't need wrap Option again.
@@ -140,8 +164,8 @@ fn generate_build(
     let struct_ident = &st.ident;
     let mut expand = vec![];
     let mut checks = vec![];
-    for (ident, WrapType(_ty, is_option)) in idents.iter().zip(types) {
-        let tmp = if *is_option {
+    for (ident, WrapType(_ty, inner)) in idents.iter().zip(types) {
+        let tmp = if inner.eq(&InnerType::Option) {
             quote!(#ident: self.#ident.take())
         } else {
             checks.push(quote!{
@@ -166,4 +190,24 @@ fn generate_build(
         }
     };
     Ok(res)
+}
+
+fn get_named_struct_field_attributes(st: &DeriveInput) {
+    if let syn::Data::Struct(syn::DataStruct {
+        fields: syn::Fields::Named(syn::FieldsNamed { ref named, .. }),
+        ..
+    }) = st.data
+    {
+        let attrs: Vec<_> = named
+            .iter()
+            .map(
+                |f| {
+                    eprintln!("inner attrs:\n {:?}", f.attrs);
+                    if let Some(syn::Attribute { style, meta, .. }) = f.attrs.last() {
+                        
+                    }
+                },
+            )
+            .collect();
+    }
 }
