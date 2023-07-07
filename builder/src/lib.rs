@@ -16,17 +16,24 @@ use types::*;
 #[proc_macro_derive(Builder, attributes(builder))]
 pub fn derive(input: TokenStream) -> TokenStream {
     let st = parse_macro_input!(input as DeriveInput);
+    match do_expand(&st) {
+        Ok(ts) => ts.into(),
+        Err(e) => e.to_compile_error().into()
+    }
+}
 
+fn do_expand(st: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
+   
     let ident = st.ident.to_string();
     let build_ident = Ident::new(&format!("{}Builder", ident), st.span());
 
-    let fi = collect_named_struct_field_info(&st).expect("collect named struct field info failed");
+    let fi = collect_named_struct_field_info(&st)?;
     let builder_struct =
-        generate_builder_struct(&st, &fi.idents, &fi.types).expect("generate build struct failed");
+        generate_builder_struct(&st, &fi.idents, &fi.types)?;
     let builder_func =
-        generate_builder_function(&st, &fi.idents).expect("generate builder function failed");
+        generate_builder_function(&st, &fi.idents)?;
 
-    let setters = generate_setters(&fi).expect("generate setter failed");
+    let setters = generate_setters(&fi)?;
     let build_func = generate_build_function(&st, &fi.idents, &fi.types)
         .expect("generate build function failed");
     let ts = quote! {
@@ -40,21 +47,5 @@ pub fn derive(input: TokenStream) -> TokenStream {
             #build_func
         }
     };
-
-    TokenStream::from(ts)
+    Ok(ts)
 }
-
-// fn get_named_struct_field_attributes(st: &DeriveInput) {
-//     if let syn::Data::Struct(syn::DataStruct {
-//         fields: syn::Fields::Named(syn::FieldsNamed { ref named, .. }),
-//         ..
-//     }) = st.data
-//     {
-//         let attrs: Vec<_> = named
-//             .iter()
-//             .map(|f| {
-
-//             })
-//             .collect();
-//     }
-// }

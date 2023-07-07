@@ -31,7 +31,7 @@ pub enum TypeName {
     Vector,
     Whocares,
 }
-
+#[allow(dead_code)]
 pub struct WrapAttr<'a> {
     pub(crate) path: Option<&'a Ident>,
     pub(crate) meta: MetaType<'a>,
@@ -46,22 +46,23 @@ impl<'a> WrapAttr<'a> {
     pub fn default() -> Self {
         WrapAttr {
             path: None,
-            meta: MetaType::Whocares,
-            ty: AttrType::Whocares,
+            meta: MetaType::None,
+            ty: AttrType::None,
         }
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, PartialEq, Eq)]
 pub enum MetaType<'a> {
     Path(Ident),
     List(Vec<MetaType<'a>>),
     NameValue(&'a str, Ident),
-    Whocares,
+    None,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum AttrType {
     Each,
-    Whocares,
+    None,
 }

@@ -1,7 +1,5 @@
 use proc_macro2::Ident;
-use syn::{
-    punctuated::Punctuated, Data, DeriveInput, Expr, ExprLit, Meta, MetaNameValue, Token,
-};
+use syn::{punctuated::Punctuated, Data, DeriveInput, Expr, ExprLit, Meta, MetaNameValue, Token};
 
 use crate::types::{AttrType, FieldInfo, MetaType, TypeName, WrapAttr, WrapType};
 
@@ -37,10 +35,10 @@ pub fn parse_field_type_info<'a>(f: &'a syn::Field) -> WrapType {
     WrapType::new(&f.ty, None, TypeName::Whocares)
 }
 
-pub fn parse_filed_attrs<'a>(f: &'a syn::Field) -> WrapAttr {
+pub fn parse_filed_attrs<'a>(f: &'a syn::Field) -> syn::Result<WrapAttr> {
     for attr in &f.attrs {
         if !attr.path().is_ident("builder") {
-            return WrapAttr::default();
+            return Err(syn::Error::new_spanned(attr.path(), "expected `builder(...)`"));
         }
 
         let nested = attr
@@ -57,15 +55,17 @@ pub fn parse_filed_attrs<'a>(f: &'a syn::Field) -> WrapAttr {
         })) = nested.first()
         {
             if path.is_ident("each") {
-                return WrapAttr::new(
+                return Ok(WrapAttr::new(
                     attr.path().get_ident(),
                     MetaType::NameValue("each", Ident::new(&l.value(), l.span())),
                     AttrType::Each,
-                );
+                ));
+            } else {
+                return Err(syn::Error::new_spanned(&attr.meta, "expected `builder(each = \"...\")`"));
             }
         }
     }
-    WrapAttr::default()
+    Ok(WrapAttr::default())
 }
 
 /// what if the field is Option
@@ -77,7 +77,12 @@ pub fn collect_named_struct_field_info(st: &DeriveInput) -> syn::Result<FieldInf
     {
         let idents: Vec<_> = named.iter().map(|f| &f.ident).collect();
         let types: Vec<_> = named.iter().map(parse_field_type_info).collect();
-        let attrs: Vec<_> = named.iter().map(parse_filed_attrs).collect();
+        let mut attrs = vec![];
+        for f in named.iter() {
+            let wat = parse_filed_attrs(f)?;
+            attrs.push(wat);
+        }   
+
         return Ok(FieldInfo {
             idents,
             types,
