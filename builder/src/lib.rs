@@ -3,15 +3,15 @@ use proc_macro2::Ident;
 use quote::quote;
 use syn::{parse_macro_input, spanned::Spanned, DeriveInput};
 
+mod builder;
 mod parse;
 mod setter;
 mod types;
-mod builder;
 
+use builder::*;
 use parse::*;
 use setter::*;
 use types::*;
-use builder::*;
 
 #[proc_macro_derive(Builder, attributes(builder))]
 pub fn derive(input: TokenStream) -> TokenStream {
@@ -53,8 +53,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
 //         let attrs: Vec<_> = named
 //             .iter()
 //             .map(|f| {
-//                 eprintln!("inner attrs:\n {:?}", f.attrs);
-//                 if let Some(syn::Attribute { style, meta, .. }) = f.attrs.last() {}
+
 //             })
 //             .collect();
 //     }

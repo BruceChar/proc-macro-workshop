@@ -1,7 +1,10 @@
+use proc_macro2::Ident;
+
 pub struct FieldInfo<'a> {
     pub(crate) idents: Vec<&'a Option<syn::Ident>>,
     pub(crate) types: Vec<WrapType<'a>>,
-    pub(crate) attrs: Vec<&'a Vec<syn::Attribute>>,
+    // pub(crate) attrs: Vec<&'a Vec<syn::Attribute>>,
+    pub(crate) attrs: Vec<WrapAttr<'a>>,
 }
 pub struct WrapType<'a> {
     /// origin syn Type
@@ -22,9 +25,43 @@ impl<'a> WrapType<'a> {
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum TypeName {
     Option,
     Vector,
+    Whocares,
+}
+
+pub struct WrapAttr<'a> {
+    pub(crate) path: Option<&'a Ident>,
+    pub(crate) meta: MetaType<'a>,
+    pub(crate) ty: AttrType,
+}
+
+impl<'a> WrapAttr<'a> {
+    pub fn new(path: Option<&'a Ident>, meta: MetaType<'a>, ty: AttrType) -> Self {
+        WrapAttr { path, meta, ty }
+    }
+
+    pub fn default() -> Self {
+        WrapAttr {
+            path: None,
+            meta: MetaType::Whocares,
+            ty: AttrType::Whocares,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum MetaType<'a> {
+    Path(Ident),
+    List(Vec<MetaType<'a>>),
+    NameValue(&'a str, Ident),
+    Whocares,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum AttrType {
+    Each,
     Whocares,
 }

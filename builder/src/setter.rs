@@ -4,7 +4,10 @@ use proc_macro2::{Ident, TokenStream};
 use quote::quote;
 use syn::DeriveInput;
 
-use crate::{FieldInfo, TypeName, WrapType};
+use crate::{
+    types::{AttrType, MetaType},
+    FieldInfo, TypeName, WrapType,
+};
 
 /// Option type keep the origin and wrap the non-option
 /// type T with std::option::Option<T>.
@@ -32,29 +35,60 @@ pub fn generate_setters(fields: &FieldInfo) -> syn::Result<proc_macro2::TokenStr
         attrs,
     } = fields;
     let mut ts: Vec<TokenStream> = vec![];
-    for (ident, (WrapType { ty, inner, tyn }, _attr)) in idents.iter().zip(zip(types, attrs)) {
+    for (ident, (WrapType { ty, inner, tyn }, attr)) in idents.iter().zip(zip(types, attrs)) {
         let mut type_ident = ty;
-
         // if origin type is Option, keep it.
         if tyn.eq(&TypeName::Option) {
             type_ident = inner.as_ref().unwrap();
         };
-
-        // Vec type
-        if tyn.eq(&TypeName::Vector) {}
-
-        ts.push(quote! {
+        let mut setter = quote! {
             fn #ident(&mut self, #ident: #type_ident) -> &mut Self {
                 self.#ident = std::option::Option::Some(#ident);
                 self
             }
-        });
+        };
+
+        // Vec type and attr is each
+        if tyn.eq(&TypeName::Vector) && attr.ty.eq(&AttrType::Each) {
+            if let MetaType::NameValue(_, ref each) = attr.meta {
+                let ident_str = ident.as_ref().expect("[SBH] ident is none").to_string();
+
+                // setter name is conflict
+                type_ident = inner.as_ref().expect("should not be None");
+                if each.eq(&ident_str) {
+                    setter = quote! {
+                        fn #ident(&mut self, #ident: #type_ident) -> &mut Self {
+                            if let Some(ref mut v) = self.#ident {
+                                v.push(#ident);
+                                // self.#ident = std::option::Option::Some(v);
+                            } else {
+                                self.#ident = std::option::Option::Some(vec![#ident]);
+                            }
+                            self
+                        }
+                    }
+                } else {
+                    // add for-one setter
+                    ts.push(quote! {
+                        fn #each(&mut self, #each: #type_ident) -> &mut Self {
+                            if let Some(ref mut v) =  self.#ident {
+                                v.push(#each);
+                                // self.#ident = std::option::Option::Some(v);
+                            } else {
+                                self.#ident = std::option::Option::Some(vec![#each]);
+                            }
+                            self
+                        }
+                    })
+                }
+            }
+        }
+        ts.push(setter);
     }
     Ok(quote! {
         #(#ts)*
     })
 }
-
 
 pub fn generate_build_function(
     st: &DeriveInput,

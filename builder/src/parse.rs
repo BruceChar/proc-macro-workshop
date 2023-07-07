@@ -1,6 +1,9 @@
-use syn::{DeriveInput, Data};
+use proc_macro2::Ident;
+use syn::{
+    punctuated::Punctuated, Data, DeriveInput, Expr, ExprLit, Meta, MetaNameValue, Token,
+};
 
-use crate::types::{WrapType, TypeName, FieldInfo};
+use crate::types::{AttrType, FieldInfo, MetaType, TypeName, WrapAttr, WrapType};
 
 pub fn parse_field_type_info<'a>(f: &'a syn::Field) -> WrapType {
     if let syn::Type::Path(syn::TypePath { ref path, .. }, ..) = f.ty {
@@ -14,7 +17,6 @@ pub fn parse_field_type_info<'a>(f: &'a syn::Field) -> WrapType {
                     return WrapType::new(&f.ty, Some(&inner), tyn);
                 }
             }
-            eprintln!("no inner type: {:?}", seg);
             // TODO: parse error
             WrapType::new(&f.ty, None, TypeName::Whocares)
         };
@@ -32,9 +34,38 @@ pub fn parse_field_type_info<'a>(f: &'a syn::Field) -> WrapType {
             }
         }
     }
-    eprintln!("out no inner type: {:?}", f.ty);
-
     WrapType::new(&f.ty, None, TypeName::Whocares)
+}
+
+pub fn parse_filed_attrs<'a>(f: &'a syn::Field) -> WrapAttr {
+    for attr in &f.attrs {
+        if !attr.path().is_ident("builder") {
+            return WrapAttr::default();
+        }
+
+        let nested = attr
+            .parse_args_with(Punctuated::<Meta, Token!(,)>::parse_terminated)
+            .expect("parse args failed");
+        if let Some(Meta::NameValue(MetaNameValue {
+            path,
+            value:
+                Expr::Lit(ExprLit {
+                    lit: syn::Lit::Str(l),
+                    ..
+                }),
+            ..
+        })) = nested.first()
+        {
+            if path.is_ident("each") {
+                return WrapAttr::new(
+                    attr.path().get_ident(),
+                    MetaType::NameValue("each", Ident::new(&l.value(), l.span())),
+                    AttrType::Each,
+                );
+            }
+        }
+    }
+    WrapAttr::default()
 }
 
 /// what if the field is Option
@@ -46,7 +77,7 @@ pub fn collect_named_struct_field_info(st: &DeriveInput) -> syn::Result<FieldInf
     {
         let idents: Vec<_> = named.iter().map(|f| &f.ident).collect();
         let types: Vec<_> = named.iter().map(parse_field_type_info).collect();
-        let attrs: Vec<_> = named.iter().map(|f| &f.attrs).collect();
+        let attrs: Vec<_> = named.iter().map(parse_filed_attrs).collect();
         return Ok(FieldInfo {
             idents,
             types,
