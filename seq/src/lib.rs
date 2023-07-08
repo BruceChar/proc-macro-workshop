@@ -1,12 +1,12 @@
 use proc_macro::TokenStream;
-use proc_macro2::{Literal, TokenTree};
-use quote::{ToTokens, quote};
+use proc_macro2::{Ident, Literal, TokenTree};
+use quote::{quote, ToTokens};
 use syn::{parse::Parse, parse_macro_input};
 
 #[proc_macro]
 pub fn seq(input: TokenStream) -> TokenStream {
     let st = parse_macro_input!(input as SeqParser);
-    
+
     // eprintln!("body: {}", body);
     let mut ts = proc_macro2::TokenStream::new();
     for i in st.start..st.end {
@@ -55,10 +55,29 @@ impl SeqParser {
     fn do_expand(&self, ts: &proc_macro2::TokenStream, n: usize) -> proc_macro2::TokenStream {
         let mut buf = proc_macro2::TokenStream::new();
         let body = ts.clone().into_iter().collect::<Vec<_>>();
-        for i in 0..body.len() {
-            match &body[i] {
+        let mut id = 0;
+        let blen = body.len();
+        while id < blen {
+            match &body[id] {
                 // match the N and replace
                 TokenTree::Ident(i) => {
+                    // match the `xxx#N`
+                    // the `xxx #N`, `xxx # N`, `xxx# N` is parsed the same
+                    // as `xxx#N`.So we need to check the span
+                    if id + 2 < blen {
+                        if let TokenTree::Punct(p) = &body[id + 1] {
+                            if i.span().end() == p.span().start() && p.as_char().eq(&'~') {
+                                if let TokenTree::Ident(i2) = &body[id + 2] {
+                                    if i2.span().start() == p.span().end() && i2.eq(&self.n) {
+                                        let ni = Ident::new(&format!("{}{}", i, n), i.span());
+                                        buf.extend(quote!(#ni));
+                                        id += 3;
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                    }
                     if self.n.eq(i) {
                         let ln = proc_macro2::TokenTree::from(Literal::usize_unsuffixed(n));
                         buf.extend(ln.to_token_stream());
@@ -70,13 +89,14 @@ impl SeqParser {
                     let s = self.do_expand(&g.stream(), n);
                     let new_grp = proc_macro2::Group::new(g.delimiter(), s);
                     buf.extend(new_grp.to_token_stream());
-                },
-                t =>{ 
+
+                }
+                t => {
                     // buf.extend(quote!(#t))
                     buf.extend(t.to_token_stream());
-                },
+                }
             }
-
+            id += 1;
         }
         buf
     }
